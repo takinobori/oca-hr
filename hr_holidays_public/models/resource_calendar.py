@@ -2,7 +2,7 @@
 # Copyright 2018 Brainbean Apps
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from odoo import api, models
+from odoo import models
 from odoo.addons.resource.models.resource import Intervals
 
 from pytz import timezone
@@ -26,6 +26,16 @@ class ResourceCalendar(models.Model):
         HrHolidaysPublic = self.env['hr.holidays.public']
 
         leaves = []
+        if start_dt.year != end_dt.year:
+            # This fixes the case of leave request asked over 2 years.
+            #
+            # adding 1 year to end_dt for rrule to retrieve correct years for
+            # public holidays to work
+            # rrule.rrule(rrule.YEARLY, dtstart=2019-12-22, until=2020-01-05)
+            # gives [2019]
+            # rrule.rrule(rrule.YEARLY, dtstart=2019-12-22, until=2021-01-05)
+            # gives [2019, 2020]
+            end_dt = end_dt.replace(year=end_dt.year+1)
         for day in rrule.rrule(rrule.YEARLY, dtstart=start_dt, until=end_dt):
             lines = HrHolidaysPublic.get_holidays_list(
                 day.year, employee_id=employee_id,
@@ -41,12 +51,11 @@ class ResourceCalendar(models.Model):
                             line.date,
                             time.max
                         ).replace(tzinfo=tz),
-                        line
+                        self.env['resource.calendar.leaves']
                     ),
                 )
         return Intervals(leaves)
 
-    @api.multi
     def _leave_intervals(self, start_dt, end_dt, resource=None, domain=None):
         res = super()._leave_intervals(
             start_dt=start_dt,
